@@ -41,11 +41,12 @@ ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
 #define TXD2 17
 HardwareSerial neogps(1);
 TinyGPSPlus gps;
-  double LatA = 42.907647, LongA = 141.574028;//目的地
+  double LatA = 42.907647;  //目的地_緯度
+  double LongA = 141.574028;//目的地_経度
   double laT;
   double lonG;
-  double D = 0;//方角
-  double d = 0;//距離
+  double Direction = 0;//方角
+  double Distance = 0;//距離
 //GPS用********************
 
 //SD用********************************************************************************
@@ -53,7 +54,7 @@ TinyGPSPlus gps;
 #include <SD.h>
 
   const int CS_PIN = 2;
-  const String file_path = "/data/AfterTheFall.txt";//作成するファイルとパスの名前を指定、作成
+  const String file_path = "/data/AfterTheFall.csv";//作成するファイルとパスの名前を指定、作成
 File f;
 //SD用********************************************************************************
 
@@ -110,7 +111,7 @@ if(SD.exists(file_path)){
   }else{
     Serial.println("file none");
     f = SD.open(file_path, FILE_APPEND);
-    f.println("Write Success");
+    f.println("Time,Altitude,latitude,longitude,acceleration_X,acceleration_Y,acceleration_Z,impact");
     f.close();
   }
 //SD用********************************************************************************
@@ -212,17 +213,15 @@ void GPS(){
       double laT = (gps.location.lat());
       double lonG = (gps.location.lng());
        
-      Serial.print("LAT: "); Serial.print(gps.location.lat() , 7);//緯度
-      Serial.print("/");
-      Serial.print("LONG: "); Serial.println(gps.location.lng() , 7);//経度
-      Serial.print("ここから");
+      Serial.print("latitude: ");//緯度
       Serial.print( String(laT,7) );
       Serial.print("/");
+      Serial.print("longitude: ");//経度
       Serial.print( String(lonG,7) );
-      Serial.println("ここまで");
-        
-      D = (atan2((lonG - LongA) * 1.23, (laT - LatA)) * 57.3 + 180); 
-      d = (sqrt(pow(LongA - lonG, 2) + pow(LatA - laT, 2)) * 99096.44);
+      Serial.print("/");
+      
+      Direction = (atan2((lonG - LongA) * 1.23, (laT - LatA)) * 57.3 + 180);   //目的地までの方角
+      Distance = (sqrt(pow(LongA - lonG, 2) + pow(LatA - laT, 2)) * 99096.44); //目的地までの距離
     }
   }
 }
@@ -248,24 +247,12 @@ void loofOpen(){
 }
 
 void SDcard(){
+  char buffer[128]; // 書き込むデータを保持するバッファ
+  sprintf(buffer, "%ld,%f,%0.7f,%0.7f,%f,%f,%f,%f", currentTime, Altitude, laT, lonG, ax, ay, az, G);
+
   f = SD.open(file_path, FILE_APPEND);
-  if (f){
-    f.print( currentTime );
-    f.print( "," );
-    f.print( Altitude );
-    f.print( "," );
-    f.print( gps.location.lat() , 7 );
-    f.print( "," );
-    f.print( gps.location.lng() , 7 );
-    f.print( "," );
-    f.print( ax );
-    f.print( "," );
-    f.print( ay );
-    f.print( "," );
-    f.print( az );
-    f.print( "," );
-    f.println( G );
-    
+  if (f) {
+    f.println(buffer); // まとめたデータを一気に書き込む
     f.close();
   }
   else{
@@ -288,11 +275,10 @@ void impact(){
   Serial.print("Z=");
   Serial.print(az);
   Serial.println(" g");
-  Serial.println("**********************");
   G = sqrt(pow(ax,2) + pow(ay,2) + pow(az,2));
   Serial.print("G:");
   Serial.println(G);
-  Serial.println("********************************************");
+//  return G;
 }
 
 void DeepSleep(){
