@@ -1,5 +1,5 @@
-      char m[32];
-      char n[32];
+      char Lat[128];
+      char Long[128];
 //共用************
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -32,7 +32,7 @@ Adafruit_BME280 bme;
   float keepAltitude = 0;
   float PLA = 0;//Pre-launch altitude(打上げ前高度)
   float LA = 0;
-  float AltitudeDif = 3;//Altitude difference高度差(m)
+  float AltitudeDif = 1.5;//Altitude difference高度差(m)
 //BME用********************************
 
 //ADXL用************************************************************
@@ -51,9 +51,6 @@ HardwareSerial neogps(1);
 TinyGPSPlus gps;
   float laT;
   float lonG;
-  
-  float Direction = 0;//方角
-  float Distance = 0;//距離
 //GPS用********************
 
 //SD用********************************************************************************
@@ -83,6 +80,11 @@ void setup() {
   {
     Serial.println("BME280が使えない");
     while (10);
+      //LED点滅
+      digitalWrite(LED_pin , HIGH);
+      delay(200);
+      digitalWrite(LED_pin , LOW);
+      delay(200);
   }
 //BME用********************************
 
@@ -100,6 +102,7 @@ void setup() {
   }else{
     Serial.println("SD Failed");
     while(1){
+      //LED点滅
       digitalWrite(LED_pin , HIGH);
       delay(200);
       digitalWrite(LED_pin , LOW);
@@ -218,16 +221,15 @@ void GPS(){
   while ( neogps.available() ){ //新しいデータの有無
     if ( gps.encode( neogps.read() ) ){ //GPSデータを解析し、緯度と経度を取得
       newData = true;
-      float laT = (gps.location.lat());
-      float lonG = (gps.location.lng());
-      dtostrf(laT, 9, 7, m);
-      dtostrf(lonG, 9, 7, n);
+      laT = (gps.location.lat());
+      lonG = (gps.location.lng());
+
       
       Serial.print("latitude: ");//緯度
-      Serial.print(m);
+      Serial.print(laT);
       Serial.print("/");
-      Serial.print("longitude: ");//経度Serial.println( String(lonG,7) );
-      Serial.println( n );
+      Serial.print("longitude: ");//経度
+      Serial.println( lonG );
     }
   }
 }
@@ -237,33 +239,24 @@ void loofOpen(){
   myServo.attach( SERVO_PIN );
   myServo.write( 120 );
   f = SD.open(file_path, FILE_APPEND);
-  if (f){
-    f.println( "************************************************************" );
-    f.println( "RoofOpen" );
-    f.println( "************************************************************" );
-    f.close();
-  }
-  else{
-    f.println( "Error opening file" );
-    f.close();
-    Serial.println( "Error opening file" );   
-  }
+  f.println( "************************************************************" );
+  f.println( "RoofOpen" );
+  f.println( "************************************************************" );
+  f.close();
 }
 
 void SDcard(){
-  char buffer[256]; // 書き込むデータを保持するバッファ
-  sprintf(buffer, "%ld,%f,%0.7f,%0.7f,%4.2f,%4.2f,%4.2f,%4.2f", currentTime, Altitude, m, n, ax, ay, az, G);
-
+String data = String(currentTime) + "," + 
+              String(Altitude) + "," + 
+              String(laT, 7) + "," + 
+              String(lonG, 7) + "," + 
+              String(ax) + "," + 
+              String(ay) + "," + 
+              String(az) + "," + 
+              String(G);
   f = SD.open(file_path, FILE_APPEND);
-  if (f) {
-    f.println(buffer); // まとめたデータを一気に書き込む
-    f.close();
-  }
-  else{
-    f.println( "Error opening file" );
-    f.close();
-    Serial.println("Error opening file");
-  }
+  f.println(data);
+  f.close();
 }
 
 void Calc_impact(){
