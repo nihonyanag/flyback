@@ -101,9 +101,9 @@ void setup() {
     while(1){
       //LED点滅
       digitalWrite(LED_pin , HIGH);
-      delay(200);
+      delay(1000);
       digitalWrite(LED_pin , LOW);
-      delay(200);
+      delay(1000);
     }
   }
  //フォルダの確認
