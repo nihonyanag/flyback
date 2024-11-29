@@ -1,5 +1,3 @@
-      char Lat[128];
-      char Long[128];
 //共用************
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -11,9 +9,9 @@
 #include <ESP32Servo.h>
 #define button_pin 12
 #define LED_pin 14
-  unsigned long keepTime = 0;   //
-  unsigned long currentTime = 0;//
-  unsigned long fallTime = 0;   //
+  unsigned long keepTime = 0;   
+  unsigned long currentTime = 0;
+  unsigned long fallTime = 0;   //パラシュート展開からの時間経過用変数
   const int interval = 100;//データを取得する間隔
   const int par_to_land = 10000;//パラシュート展開から着地まで
   bool fallDet_flag = true;//落下検知フラグ(Fall Detection)
@@ -31,7 +29,6 @@ Adafruit_BME280 bme;
   float maxAltitude = 0;
   float keepAltitude = 0;
   float PLA = 0;//Pre-launch altitude(打上げ前高度)
-  float LA = 0;
   float AltitudeDif = 1.5;//Altitude difference高度差(m)
 //BME用********************************
 
@@ -235,9 +232,9 @@ void GPS(){
 }
 
 void loofOpen(){
-  pinMode(SERVO_PIN, OUTPUT);     // サーボピンのモードを設定
+  pinMode(SERVO_PIN, OUTPUT);//サーボピンのモードを設定
   myServo.attach( SERVO_PIN );
-  myServo.write( 120 );
+  myServo.write( 120 );//ロックが解除され、パラシュート展開
   f = SD.open(file_path, FILE_APPEND);
   f.println( "************************************************************" );
   f.println( "RoofOpen" );
@@ -276,7 +273,6 @@ void Calc_impact(){
   G = sqrt(pow(ax,2) + pow(ay,2) + pow(az,2));
   Serial.print("G:");
   Serial.println(G);
-//  return G;
 }
 
 void DeepSleep(){
