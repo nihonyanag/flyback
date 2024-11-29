@@ -1,33 +1,41 @@
+      char m[32];
+      char n[32];
 //共用************
 #include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#include <ADXL345.h>
+#include <TinyGPS++.h>
+#include <SPI.h>
+#include <SD.h>
+#include <ESP32Servo.h>
+#define button_pin 12
+#define LED_pin 14
   unsigned long keepTime = 0;  
   unsigned long currentTime = 0;
   unsigned long fallTime = 0;  
-  int interval = 100;//データを取得する間隔
-  bool RO = true;
-  const int button_pin = 12;
-  const int LED_pin = 14;
-  int value = 0;
+  const int interval = 100;//データを取得する間隔
+  const int par_to_land = 10000;//パラシュート展開から着地まで
+  bool fallDet_flag = true;//落下検知フラグ(Fall Detection)
+
   RTC_DATA_ATTR int bootCount = 0;
-  RTC_DATA_ATTR bool a = true;
-  RTC_DATA_ATTR bool b = true;
+  RTC_DATA_ATTR bool BeforeDS_flag = true;//ディープスリープに入る前フラグ
+  RTC_DATA_ATTR bool RturnDS_flag = true;//ディープスリープから復帰後フラグ
 //共用************
 
 //BME用********************************
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
 #define SEALEVELPRESSURE_HPA (1013.25)
 Adafruit_BME280 bme;
+  const int AddAltitude = 200;//高度が負の値にならないように
   float Altitude = 0;
   float maxAltitude = 0;
   float keepAltitude = 0;
-  float PLA = 0;
+  float PLA = 0;//Pre-launch altitude(打上げ前高度)
   float LA = 0;
-  float s = 3;//高度差(m)
+  float AltitudeDif = 3;//Altitude difference高度差(m)
 //BME用********************************
 
 //ADXL用************************************************************
-#include <ADXL345.h>
 ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
   double xyz[3];
   double ax,ay,az;
@@ -35,31 +43,28 @@ ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
 //ADXL用************************************************************
 
 //GPS用********************
-#include <TinyGPS++.h>
+
 #define OLED_RESET -1
 #define RXD2 16
 #define TXD2 17
 HardwareSerial neogps(1);
 TinyGPSPlus gps;
-  double LatA = 42.907647;  //目的地_緯度
-  double LongA = 141.574028;//目的地_経度
-  double laT;
-  double lonG;
-  double Direction = 0;//方角
-  double Distance = 0;//距離
+  float LatA = 42.907647;  //目的地_緯度
+  float LongA = 141.574028;//目的地_経度
+  float laT;
+  float lonG;
+  
+  float Direction = 0;//方角
+  float Distance = 0;//距離
 //GPS用********************
 
 //SD用********************************************************************************
-#include <SPI.h>
-#include <SD.h>
-
   const int CS_PIN = 2;
   const String file_path = "/data/AfterTheFall.csv";//作成するファイルとパスの名前を指定、作成
 File f;
 //SD用********************************************************************************
 
 //サーボ****************
-#include <ESP32Servo.h>
 #define SERVO_PIN 4
 Servo myServo;
 //サーボ****************
@@ -93,11 +98,16 @@ void setup() {
 
 //SD用********************************************************************************
   if(SD.begin(CS_PIN)){//SD初期化
-  Serial.println("SD OK");
+    Serial.println("SD OK");
   }else{
     Serial.println("SD Failed");
-    while(1);
+    while(1){
+      digitalWrite(LED_pin , HIGH);
+      delay(200);
+      digitalWrite(LED_pin , LOW);
+      delay(200);
     }
+  }
  //フォルダの確認
  if(!SD.exists("/data")){
   Serial.println("directory none");
@@ -111,7 +121,7 @@ if(SD.exists(file_path)){
   }else{
     Serial.println("file none");
     f = SD.open(file_path, FILE_APPEND);
-    f.println("Time,Altitude,latitude,longitude,acceleration_X,acceleration_Y,acceleration_Z,impact");
+    f.println("Time,Altitude,latitude,longitude,X_acceleration,Y_acceleration,Z_acceleration,impact");
     f.close();
   }
 //SD用********************************************************************************
@@ -126,10 +136,10 @@ delay(1000);
 }
 
 void loop() {
-  while(  a == true ){
+  while(  BeforeDS_flag == true ){//ボタンが押されてDSに入るまでGPSの取得のみ行う、DS復帰後はこの処理は行わない
     GPS();
-    if ( digitalRead( button_pin ) == LOW ){
-      delay( 200 );
+    if ( digitalRead( button_pin ) == LOW ){//カウント処理
+      delay( 200 );//チャタリング
       bootCount += 1;
       Serial.println( bootCount );
       while (digitalRead(button_pin) == LOW) {
@@ -137,7 +147,7 @@ void loop() {
       }
     }
     if ( bootCount == 1 ){
-      a = false;
+      BeforeDS_flag = false;
       myServo.write( 0 );//原点合わせ
       f = SD.open(file_path, FILE_APPEND);
       f.println("Power Saving Mode");
@@ -145,31 +155,31 @@ void loop() {
       digitalWrite(LED_pin , HIGH);
       delay(500);
       digitalWrite(LED_pin , LOW);
-      DeepSleep();
+      DeepSleep();//DS突入
     }
   }
-  while( a == false ){
-    if ( b == true ){
-      Buzzer();
+  while( BeforeDS_flag == false ){
+    if ( RturnDS_flag == true ){//復帰後に処理を開始
+      Buzzer();//復帰をブザーで確認
       delay(500);
-      ledcWriteTone(BUZZER_CHANEL, 0);    // 消音
-      PLA = bme.readAltitude(SEALEVELPRESSURE_HPA);
+      ledcWriteTone(BUZZER_CHANEL, 0);// 消音
+      PLA = bme.readAltitude(SEALEVELPRESSURE_HPA);//ロケット発射前高度の記録
       f = SD.open(file_path, FILE_APPEND);
-      f.println("Weke UP");
+      f.println("Weke UP");//DS復帰のログ
       f.print("Pre-launch altitude");
       f.println( PLA );
       f.close();
-      b = false;
+      RturnDS_flag = false;
     }
 
     lead();
   }
-}
+}//loop end
 
 void lead(){
   currentTime = millis();//interval秒で現在時刻を更新
   Altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);//interval秒で現在高度を更新
-  Altitude = Altitude +200;
+  Altitude = Altitude + AddAltitude;
   if (currentTime - keepTime >= interval ){ //interval秒でデータを取得
     keepTime = currentTime;
 
@@ -180,16 +190,16 @@ void lead(){
       keepAltitude = Altitude;
     }
     
-    if ( maxAltitude - Altitude >= s && RO == true  ){//パラシュート展開
+    if ( maxAltitude - Altitude >= AltitudeDif && fallDet_flag == true  ){//パラシュート展開
       loofOpen();
-      RO = false;
+      fallDet_flag = false;
       fallTime = currentTime;
     }
     GPS();
-    impact();
+    Calc_impact();
     SDcard();
-    if ( currentTime - fallTime >= 10000 ){
-      if( RO == false ){//着地確認
+    if ( currentTime - fallTime >= par_to_land ){
+      if( fallDet_flag == false ){//着地確認
         f = SD.open(file_path, FILE_APPEND);
         f.println( "landing" );
         f.close();
@@ -210,18 +220,16 @@ void GPS(){
   while ( neogps.available() ){ //新しいデータの有無
     if ( gps.encode( neogps.read() ) ){ //GPSデータを解析し、緯度と経度を取得
       newData = true;
-      double laT = (gps.location.lat());
-      double lonG = (gps.location.lng());
-       
-      Serial.print("latitude: ");//緯度
-      Serial.print( String(laT,7) );
-      Serial.print("/");
-      Serial.print("longitude: ");//経度
-      Serial.print( String(lonG,7) );
-      Serial.print("/");
+      float laT = (gps.location.lat());
+      float lonG = (gps.location.lng());
+      dtostrf(laT, 9, 7, m);
+      dtostrf(lonG, 9, 7, n);
       
-      Direction = (atan2((lonG - LongA) * 1.23, (laT - LatA)) * 57.3 + 180);   //目的地までの方角
-      Distance = (sqrt(pow(LongA - lonG, 2) + pow(LatA - laT, 2)) * 99096.44); //目的地までの距離
+      Serial.print("latitude: ");//緯度
+      Serial.print(m);
+      Serial.print("/");
+      Serial.print("longitude: ");//経度Serial.println( String(lonG,7) );
+      Serial.println( n );
     }
   }
 }
@@ -230,10 +238,6 @@ void loofOpen(){
   pinMode(SERVO_PIN, OUTPUT);     // サーボピンのモードを設定
   myServo.attach( SERVO_PIN );
   myServo.write( 120 );
-  delay(500);
-  digitalWrite(LED_pin , HIGH);
-  delay(500);
-  digitalWrite(LED_pin , LOW);
   f = SD.open(file_path, FILE_APPEND);
   if (f){
     f.println( "************************************************************" );
@@ -242,13 +246,15 @@ void loofOpen(){
     f.close();
   }
   else{
-    Serial.println("Error opening file");
+    f.println( "Error opening file" );
+    f.close();
+    Serial.println( "Error opening file" );   
   }
 }
 
 void SDcard(){
-  char buffer[128]; // 書き込むデータを保持するバッファ
-  sprintf(buffer, "%ld,%f,%0.7f,%0.7f,%f,%f,%f,%f", currentTime, Altitude, laT, lonG, ax, ay, az, G);
+  char buffer[256]; // 書き込むデータを保持するバッファ
+  sprintf(buffer, "%ld,%f,%0.7f,%0.7f,%4.2f,%4.2f,%4.2f,%4.2f", currentTime, Altitude, m, n, ax, ay, az, G);
 
   f = SD.open(file_path, FILE_APPEND);
   if (f) {
@@ -256,12 +262,13 @@ void SDcard(){
     f.close();
   }
   else{
+    f.println( "Error opening file" );
+    f.close();
     Serial.println("Error opening file");
   }
 }
 
-void impact(){
-
+void Calc_impact(){
   adxl.getAcceleration(xyz);
   ax = xyz[0];
   ay = xyz[1];
@@ -282,7 +289,6 @@ void impact(){
 }
 
 void DeepSleep(){
-//  esp_sleep_enable_timer_wakeup(10 * 1000000);  //スリープ時間を５秒に設定
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_25, LOW);
   esp_deep_sleep_start();                      //スリープモードへ移行
 }
