@@ -11,9 +11,9 @@
 #include <ESP32Servo.h>
 #define button_pin 12
 #define LED_pin 14
-  unsigned long keepTime = 0;  
-  unsigned long currentTime = 0;
-  unsigned long fallTime = 0;  
+  unsigned long keepTime = 0;   //
+  unsigned long currentTime = 0;//
+  unsigned long fallTime = 0;   //
   const int interval = 100;//データを取得する間隔
   const int par_to_land = 10000;//パラシュート展開から着地まで
   bool fallDet_flag = true;//落下検知フラグ(Fall Detection)
@@ -49,8 +49,6 @@ ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
 #define TXD2 17
 HardwareSerial neogps(1);
 TinyGPSPlus gps;
-  float LatA = 42.907647;  //目的地_緯度
-  float LongA = 141.574028;//目的地_経度
   float laT;
   float lonG;
   
