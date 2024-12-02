@@ -13,7 +13,7 @@
   unsigned long currentTime = 0;
   unsigned long fallTime = 0;   //パラシュート展開からの時間経過用変数
   const int interval = 100;//データを取得する間隔
-  const int par_to_land = 10000;//パラシュート展開から着地まで
+  const int par_to_landTime = 10000;//パラシュート展開から着地まで
   bool fallDet_flag = true;//落下検知フラグ(Fall Detection)
 
   RTC_DATA_ATTR int bootCount = 0;
@@ -24,12 +24,11 @@
 //BME用********************************
 #define SEALEVELPRESSURE_HPA (1013.25)
 Adafruit_BME280 bme;
-  const int AddAltitude = 200;//高度が負の値にならないように
-  float Altitude = 0;
+  float Altitude = 0;//生データが入る
   float maxAltitude = 0;
-  float keepAltitude = 0;
-  float PLA = 0;//Pre-launch altitude(打上げ前高度)
+  float currentAltitude = 0;
   float AltitudeDif = 1.5;//Altitude difference高度差(m)
+  RTC_DATA_ATTR float baseAltitude = 0;//生データが入る
 //BME用********************************
 
 //ADXL用************************************************************
@@ -127,6 +126,7 @@ if(SD.exists(file_path)){
 //サーボ用************************
   pinMode(SERVO_PIN, OUTPUT);     // サーボピンのモードを設定
   myServo.attach( SERVO_PIN );
+  myServo.write( 0 );//原点合わせ
 
 //サーボ用************************
 
@@ -146,7 +146,7 @@ void loop() {
     }
     if ( bootCount == 1 ){
       BeforeDS_flag = false;
-      myServo.write( 0 );//原点合わせ
+      baseAltitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
       f = SD.open(file_path, FILE_APPEND);
       f.println("Power Saving Mode");
       f.close();
@@ -161,11 +161,8 @@ void loop() {
       Buzzer();//復帰をブザーで確認
       delay(500);
       ledcWriteTone(BUZZER_CHANEL, 0);// 消音
-      PLA = bme.readAltitude(SEALEVELPRESSURE_HPA);//ロケット発射前高度の記録
       f = SD.open(file_path, FILE_APPEND);
       f.println("Weke UP");//DS復帰のログ
-      f.print("Pre-launch altitude");
-      f.println( PLA );
       f.close();
       RturnDS_flag = false;
     }
@@ -177,26 +174,21 @@ void loop() {
 void lead(){
   currentTime = millis();//interval秒で現在時刻を更新
   Altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);//interval秒で現在高度を更新
-  Altitude = Altitude + AddAltitude;
   if (currentTime - keepTime >= interval ){ //interval秒でデータを取得
     keepTime = currentTime;
-
-    if ( Altitude > maxAltitude ){//最高高度の入れ替え
-      maxAltitude = Altitude;
-    }
-    if ( Altitude - keepAltitude != 0 ){//現在高度の入れ替え
-      keepAltitude = Altitude;
-    }
     
-    if ( maxAltitude - Altitude >= AltitudeDif && fallDet_flag == true  ){//パラシュート展開
+    Calc_Altitude();
+    
+    if ( maxAltitude - currentAltitude >= AltitudeDif && fallDet_flag == true  ){//パラシュート展開
       loofOpen();
       fallDet_flag = false;
       fallTime = currentTime;
     }
     GPS();
-    Calc_impact();
+    G = Calc_impact();
     SDcard();
-    if ( currentTime - fallTime >= par_to_land ){
+    
+    if ( currentTime - fallTime >= par_to_landTime ){
       if( fallDet_flag == false ){//着地確認
         f = SD.open(file_path, FILE_APPEND);
         f.println( "landing" );
@@ -244,7 +236,7 @@ void loofOpen(){
 
 void SDcard(){
 String data = String(currentTime) + "," + 
-              String(Altitude) + "," + 
+              String(currentAltitude) + "," + 
               String(laT, 7) + "," + 
               String(lonG, 7) + "," + 
               String(ax) + "," + 
@@ -256,7 +248,7 @@ String data = String(currentTime) + "," +
   f.close();
 }
 
-void Calc_impact(){
+float Calc_impact(){
   adxl.getAcceleration(xyz);
   ax = xyz[0];
   ay = xyz[1];
@@ -273,6 +265,7 @@ void Calc_impact(){
   G = sqrt(pow(ax,2) + pow(ay,2) + pow(az,2));
   Serial.print("G:");
   Serial.println(G);
+  return G;
 }
 
 void DeepSleep(){
@@ -284,4 +277,16 @@ void Buzzer(){
   ledcSetup(BUZZER_CHANEL, 12000, 8);
   ledcAttachPin(BUZZER_PIN, BUZZER_CHANEL);
   ledcWriteTone(BUZZER_CHANEL, 440); // ラ
+}
+
+void Calc_Altitude(){
+  if( baseAltitude < Altitude ){//現在高度の入れ替え
+    currentAltitude = Altitude - baseAltitude;
+    
+    if( currentAltitude > maxAltitude ){//最高高度の入れ替え
+      maxAltitude = currentAltitude;
+    }
+  }
+  Serial.println(currentAltitude);
+  Serial.println( maxAltitude );
 }
