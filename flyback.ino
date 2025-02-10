@@ -24,10 +24,11 @@
 //BME用********************************
 #define SEALEVELPRESSURE_HPA (1013.25)
 Adafruit_BME280 bme;
+  float Temp = 0;//温度
   float Altitude = 0;//生データが入る
-  float maxAltitude = 0;
-  float currentAltitude = 0;
-  float AltitudeDif = 1.5;//Altitude difference高度差(m)
+  float maxAltitude = 0;//最高高度
+  float currentRiseAltitude = 0;//現在上昇高度
+  float AltitudeDif = 1.8;//Altitude difference高度差(m)
   RTC_DATA_ATTR float baseAltitude = 0;//生データが入る
 //BME用********************************
 
@@ -39,7 +40,6 @@ ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
 //ADXL用************************************************************
 
 //GPS用********************
-
 #define OLED_RESET -1
 #define RXD2 16
 #define TXD2 17
@@ -66,6 +66,9 @@ Servo myServo;
 //ブザー***************************************
 
 void setup() {
+  if( BeforeDS_flag == false ){
+    delay(500);
+  }
   pinMode( button_pin , INPUT_PULLUP );
   pinMode( LED_pin , OUTPUT );
   Serial.begin(115200);
@@ -93,28 +96,28 @@ void setup() {
 //GPS用***************************************
 
 //SD用********************************************************************************
-  if(SD.begin(CS_PIN)){//SD初期化
+  pinMode(CS_PIN, OUTPUT);
+  digitalWrite(CS_PIN, HIGH); // 初期状態を設定
+  delay(2000); // 設定後の待機
+  if(SD.begin(CS_PIN)){           //SD初期化
     Serial.println("SD OK");
   }else{
     Serial.println("SD Failed");
-    while(1){
-      //LED点滅
+    while(1){                     //LED点滅
       digitalWrite(LED_pin , HIGH);
       delay(1000);
       digitalWrite(LED_pin , LOW);
       delay(1000);
     }
   }
- //フォルダの確認
- if(!SD.exists("/data")){
-  Serial.println("directory none");
-  SD.mkdir("/data");
+  
+  if(!SD.exists("/data")){        //フォルダの確認
+    Serial.println("directory none");
+    SD.mkdir("/data");
   }
 
- //ファイルの確認
-if(SD.exists(file_path)){
+  if(SD.exists(file_path)){       //ファイルの確認
     Serial.println("file exist");
-   // ReadFile(file_path);
   }else{
     Serial.println("file none");
     f = SD.open(file_path, FILE_APPEND);
@@ -159,7 +162,7 @@ void loop() {
   while( BeforeDS_flag == false ){
     if ( RturnDS_flag == true ){//復帰後に処理を開始
       Buzzer();//復帰をブザーで確認
-      delay(500);
+      delay(1000);
       ledcWriteTone(BUZZER_CHANEL, 0);// 消音
       f = SD.open(file_path, FILE_APPEND);
       f.println("Weke UP");//DS復帰のログ
@@ -179,19 +182,22 @@ void lead(){
     
     Calc_Altitude();
     
-    if ( maxAltitude - currentAltitude >= AltitudeDif && fallDet_flag == true  ){//パラシュート展開
+    if ( maxAltitude - currentRiseAltitude >= AltitudeDif && fallDet_flag == true  ){//パラシュート展開
       loofOpen();
       fallDet_flag = false;
       fallTime = currentTime;
     }
     GPS();
     G = Calc_impact();
+    Temperature();
     SDcard();
     
     if ( currentTime - fallTime >= par_to_landTime ){
       if( fallDet_flag == false ){//着地確認
         f = SD.open(file_path, FILE_APPEND);
         f.println( "landing" );
+        f.print( "maxAltitude:" );
+        f.println( maxAltitude );
         f.close();
         while(1){//ブザーを鳴らし続ける
           Buzzer();
@@ -223,6 +229,10 @@ void GPS(){
   }
 }
 
+void Temperature(){
+  Temp = bme.readTemperature();//温度
+}
+
 void loofOpen(){
   pinMode(SERVO_PIN, OUTPUT);//サーボピンのモードを設定
   myServo.attach( SERVO_PIN );
@@ -236,13 +246,14 @@ void loofOpen(){
 
 void SDcard(){
 String data = String(currentTime) + "," + 
-              String(currentAltitude) + "," + 
+              String(currentRiseAltitude) + "," + 
               String(laT, 7) + "," + 
               String(lonG, 7) + "," + 
               String(ax) + "," + 
               String(ay) + "," + 
               String(az) + "," + 
-              String(G);
+              String(G) + "," +
+              String(Temp);
   f = SD.open(file_path, FILE_APPEND);
   f.println(data);
   f.close();
@@ -281,12 +292,12 @@ void Buzzer(){
 
 void Calc_Altitude(){
   if( baseAltitude < Altitude ){//現在高度の入れ替え
-    currentAltitude = Altitude - baseAltitude;
+    currentRiseAltitude = Altitude - baseAltitude;
     
-    if( currentAltitude > maxAltitude ){//最高高度の入れ替え
-      maxAltitude = currentAltitude;
+    if( currentRiseAltitude > maxAltitude ){//最高高度の入れ替え
+      maxAltitude = currentRiseAltitude;
     }
   }
-  Serial.println(currentAltitude);
+//  Serial.println(currentAltitude);
   Serial.println( maxAltitude );
 }
